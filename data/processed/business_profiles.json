@@ -1,0 +1,41 @@
+[
+  {
+    "business_id": "BIZ001",
+    "name": "Sharma Textile Traders",
+    "industry": "Textile",
+    "gstin": "07AABCS1429B1ZP",
+    "state": "Delhi",
+    "registration_year": 2018,
+    "monthly_revenue_base": 450000,
+    "annual_revenue_estimate": 5400000,
+    "business_size": "Small",
+    "gst_registered": true,
+    "created_at": "2026-03-02T02:00:49.245414"
+  },
+  {
+    "business_id": "BIZ002",
+    "name": "Patel Electronics",
+    "industry": "Electronics Retail",
+    "gstin": "24AABCP1234C1ZQ",
+    "state": "Gujarat",
+    "registration_year": 2019,
+    "monthly_revenue_base": 280000,
+    "annual_revenue_estimate": 3360000,
+    "business_size": "Micro",
+    "gst_registered": true,
+    "created_at": "2026-03-02T02:00:49.250575"
+  },
+  {
+    "business_id": "BIZ003",
+    "name": "Kumar Foods Pvt Ltd",
+    "industry": "Food Processing",
+    "gstin": "27AABCK5678D1ZR",
+    "state": "Maharashtra",
+    "registration_year": 2017,
+    "monthly_revenue_base": 620000,
+    "annual_revenue_estimate": 7440000,
+    "business_size": "Small",
+    "gst_registered": true,
+    "created_at": "2026-03-02T02:00:49.253978"
+  }
+]
