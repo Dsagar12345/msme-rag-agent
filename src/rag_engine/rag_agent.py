@@ -13,7 +13,7 @@ from src.rag_engine.query_classifier import QueryClassifier
 from datetime import datetime
 
 load_dotenv()
-genai.configure(api_key=os.getenv("AIzaSyCA4nvE3UAqaiURiupLTds2uC7GlxHhwDA"))
+genai.configure(api_key=os.getenv("GENAI_API_KEY"))
 
 
 class MSMERAGAgent:
