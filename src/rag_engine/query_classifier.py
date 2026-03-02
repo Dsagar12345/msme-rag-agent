@@ -1,6 +1,7 @@
 # src/rag_engine/query_classifier.py
 import os
 import sys
+import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import google.generativeai as genai
@@ -9,24 +10,11 @@ from dotenv import load_dotenv
 load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
+
 class QueryClassifier:
-    """
-    Classifies incoming queries into categories BEFORE retrieval.
-    This is critical — wrong category = wrong collection = wrong answer.
-    
-    Categories map directly to ChromaDB collections:
-    - tax        → GST, Income Tax, TDS, advance tax
-    - regulatory → RBI guidelines, loan rules, NPA
-    - scheme     → MUDRA, Udyam, government schemes
-    - research   → benchmarks, industry trends, SIDBI data
-    - financial  → business's own GST/bank data
-    - general    → broad questions spanning multiple categories
-    """
-
     def __init__(self):
-        self.model = genai.GenerativeModel("gemini-2.0-flash")
+        self.model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
-        # Keyword-based fast classification (no API call needed)
         self.keyword_map = {
             "tax": [
                 "gst", "income tax", "tds", "advance tax", "itr", "section 44",
@@ -55,11 +43,6 @@ class QueryClassifier:
         }
 
     def classify_fast(self, query: str) -> str:
-        """
-        Fast keyword-based classification.
-        No API call — instant response.
-        Used as first pass before LLM classification.
-        """
         query_lower = query.lower()
         scores = {category: 0 for category in self.keyword_map}
 
@@ -70,25 +53,20 @@ class QueryClassifier:
 
         best_category = max(scores, key=scores.get)
 
-        # If no keywords matched, return general
         if scores[best_category] == 0:
             return "general"
 
         return best_category
 
     def classify_with_llm(self, query: str) -> dict:
-        """
-        LLM-based classification for ambiguous queries.
-        Returns category + reasoning + suggested search terms.
-        """
         prompt = f"""You are a financial query classifier for Indian MSME businesses.
 
 Classify this query into exactly ONE category:
 - tax: GST, income tax, TDS, advance tax, tax filing, ITC
-- regulatory: RBI guidelines, loans, NPA, restructuring, banking rules  
+- regulatory: RBI guidelines, loans, NPA, restructuring, banking rules
 - scheme: Government schemes like MUDRA, Udyam registration, subsidies
 - research: Industry benchmarks, sector trends, market data
-- financial: Business's own financial data, their specific numbers
+- financial: Business own financial data, their specific numbers
 - general: Spans multiple categories or unclear
 
 Query: "{query}"
@@ -100,10 +78,10 @@ SEARCH_TERMS: <3-5 key terms to search for>
 REASONING: <one sentence why>"""
 
         try:
+            time.sleep(4)
             response = self.model.generate_content(prompt)
             text = response.text.strip()
 
-            # Parse response
             lines = text.split('\n')
             result = {
                 "category": "general",
@@ -126,24 +104,16 @@ REASONING: <one sentence why>"""
             return result
 
         except Exception as e:
-            # Fallback to keyword classification
             return {
                 "category": self.classify_fast(query),
                 "confidence": "low",
                 "search_terms": query.split()[:5],
-                "reasoning": f"Fallback to keyword classification: {e}"
+                "reasoning": f"Fallback to keyword: {e}"
             }
 
     def classify(self, query: str) -> dict:
-        """
-        Main classification method.
-        Uses fast keyword check first.
-        If ambiguous, uses LLM for better accuracy.
-        """
-        # Fast classification first
         fast_category = self.classify_fast(query)
 
-        # If fast classification is confident, use it
         if fast_category != "general":
             return {
                 "category": fast_category,
@@ -153,13 +123,11 @@ REASONING: <one sentence why>"""
                 "method": "keyword"
             }
 
-        # Ambiguous — use LLM
         llm_result = self.classify_with_llm(query)
         llm_result["method"] = "llm"
         return llm_result
 
 
-# ── Test ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     classifier = QueryClassifier()
 
@@ -167,10 +135,6 @@ if __name__ == "__main__":
         "How do I file my GSTR-3B return?",
         "Can I get a MUDRA loan if I have pending GST dues?",
         "What is the RBI rule for MSME loan restructuring?",
-        "How does my revenue compare to industry benchmark?",
-        "What was my GST payment last quarter?",
-        "How can I grow my textile business?",
-        "What is Section 44AD of Income Tax?",
         "How to register under Udyam portal?"
     ]
 
@@ -184,4 +148,3 @@ if __name__ == "__main__":
         print(f"  Category   : {result['category']}")
         print(f"  Confidence : {result['confidence']}")
         print(f"  Method     : {result['method']}")
-        print(f"  Reasoning  : {result['reasoning']}")

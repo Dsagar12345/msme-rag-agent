@@ -1,6 +1,7 @@
 # src/rag_engine/rag_agent.py
 import os
 import sys
+import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import google.generativeai as genai
@@ -13,41 +14,25 @@ from src.rag_engine.query_classifier import QueryClassifier
 from datetime import datetime
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GENAI_API_KEY"))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 class MSMERAGAgent:
-    """
-    The core RAG agent that answers financial questions.
-    
-    Flow:
-    1. Classify query → which collection to search
-    2. Hybrid search → retrieve best chunks
-    3. Load business context → their actual numbers
-    4. Build prompt → combine query + chunks + business data
-    5. Generate answer → Gemini API
-    6. Verify answer → hallucination check
-    7. Return cited answer
-    """
-
     def __init__(self, business_id: str = "BIZ001"):
         print("Initializing MSME RAG Agent...")
         self.business_id = business_id
-        self.model = genai.GenerativeModel("gemini-2.5-flash")
+        self.model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
-        # Initialize components
         self.vector_store = MSMEVectorStore()
         self.search_engine = HybridSearchEngine(self.vector_store)
         self.classifier = QueryClassifier()
 
-        # Load business data
         self.business_profile = self._load_business_profile()
         self.gst_data = self._load_gst_data()
 
         print(f"✅ RAG Agent ready for: {self.business_profile.get('name', business_id)}")
 
     def _load_business_profile(self) -> dict:
-        """Load business profile from JSON"""
         try:
             with open("data/processed/business_profiles.json", "r") as f:
                 profiles = json.load(f)
@@ -59,7 +44,6 @@ class MSMERAGAgent:
         return {"business_id": self.business_id, "name": "Unknown Business"}
 
     def _load_gst_data(self) -> list:
-        """Load last 6 months of GST data for business"""
         try:
             df = pd.read_csv("data/processed/gst_returns.csv")
             biz_data = df[df["business_id"] == self.business_id]
@@ -69,11 +53,6 @@ class MSMERAGAgent:
         return []
 
     def _build_business_context(self) -> str:
-        """
-        Creates a financial summary of the business.
-        This gets injected into every prompt so Gemini
-        knows WHO it's talking to and their actual numbers.
-        """
         if not self.gst_data:
             return "No financial data available."
 
@@ -97,25 +76,15 @@ LAST 6 MONTHS FINANCIAL SUMMARY:
 - Late Filings: {late_filings} out of {len(self.gst_data)} months
 - Average Monthly Revenue: Rs {total_revenue/len(self.gst_data):,.0f}
 
-RECENT GST RETURNS:
-"""
+RECENT GST RETURNS:"""
+
         for record in self.gst_data[-3:]:
-            context += f"- {record.get('return_period', '')}: Revenue Rs {record.get('taxable_value', 0):,.0f}, GST Rs {record.get('net_gst_payable', 0):,.0f}, Filed on time: {record.get('filed_on_time', True)}\n"
+            context += f"\n- {record.get('return_period', '')}: Revenue Rs {record.get('taxable_value', 0):,.0f}, GST Rs {record.get('net_gst_payable', 0):,.0f}, Filed on time: {record.get('filed_on_time', True)}"
 
         return context.strip()
 
     def _build_prompt(self, query: str, retrieved_chunks: list,
                       business_context: str) -> str:
-        """
-        Builds the final prompt sent to Gemini.
-        Structure:
-        1. System role
-        2. Business context (their actual numbers)
-        3. Retrieved knowledge (regulations, guides)
-        4. The question
-        5. Instructions for answering
-        """
-        # Format retrieved chunks
         knowledge = ""
         for i, chunk in enumerate(retrieved_chunks):
             source = chunk["metadata"].get("source_file", "Unknown")
@@ -124,7 +93,7 @@ RECENT GST RETURNS:
 
         prompt = f"""You are an expert financial advisor for Indian MSME businesses.
 You have deep knowledge of GST, Income Tax, RBI regulations, and government schemes.
-Always give practical, actionable advice specific to the business's situation.
+Always give practical, actionable advice specific to the business situation.
 
 BUSINESS CONTEXT:
 {business_context}
@@ -137,21 +106,15 @@ QUESTION: {query}
 INSTRUCTIONS:
 1. Answer specifically for THIS business using their actual numbers where relevant
 2. Cite your sources using [Source X] notation
-3. Give concrete actionable steps, not generic advice
-4. If the question involves their compliance status, mention it
-5. Keep answer clear and under 300 words
-6. End with ONE specific action they should take today
+3. Give concrete actionable steps not generic advice
+4. Keep answer clear and under 300 words
+5. End with ONE specific action they should take today
 
 ANSWER:"""
 
         return prompt
 
     def _check_hallucination(self, answer: str, chunks: list) -> bool:
-        """
-        Quick hallucination check.
-        Asks Gemini if the answer is grounded in retrieved chunks.
-        Returns True if answer is grounded, False if hallucinated.
-        """
         context = " ".join([c["text"][:200] for c in chunks[:3]])
 
         prompt = f"""Is this financial answer grounded in the provided context?
@@ -164,21 +127,18 @@ Answer: {answer[:300]}
 Grounded (YES/NO):"""
 
         try:
+            time.sleep(4)
             response = self.model.generate_content(prompt)
             return "YES" in response.text.upper()
         except:
-            return True  # Assume grounded if check fails
+            return True
 
     def answer(self, query: str) -> dict:
-        """
-        Main method — takes a question, returns a full answer.
-        This is what gets called from the UI.
-        """
         print(f"\n{'='*55}")
         print(f"Processing: '{query}'")
         print('='*55)
 
-        # Step 1: Classify query
+        # Step 1: Classify
         classification = self.classifier.classify(query)
         category = classification["category"]
         print(f"📋 Category: {category} ({classification['confidence']} confidence)")
@@ -191,29 +151,36 @@ Grounded (YES/NO):"""
         )
         print(f"🔍 Retrieved {len(chunks)} relevant chunks")
 
-        # Step 3: Load business context
+        # Step 3: Business context
         business_context = self._build_business_context()
 
         # Step 4: Build prompt
         prompt = self._build_prompt(query, chunks, business_context)
 
-        # Step 5: Generate answer
+        # Step 5: Generate answer with rate limiting
         print("🤖 Generating answer with Gemini...")
         try:
+            time.sleep(5)
             response = self.model.generate_content(prompt)
             answer = response.text.strip()
         except Exception as e:
-            answer = f"Error generating answer: {e}"
-            return {"answer": answer, "error": True}
+            return {
+                "query": query,
+                "answer": f"Rate limit hit — please wait 60 seconds and try again. Error: {e}",
+                "category": category,
+                "sources": [],
+                "chunks_used": len(chunks),
+                "grounded": False,
+                "error": True,
+                "timestamp": datetime.now().isoformat()
+            }
 
         # Step 6: Hallucination check
         is_grounded = self._check_hallucination(answer, chunks)
         if not is_grounded:
-            print("⚠️  Hallucination detected — regenerating...")
-            response = self.model.generate_content(prompt)
-            answer = response.text.strip()
+            print("⚠️  Re-checking grounding...")
 
-        # Step 7: Build response object
+        # Step 7: Return result
         sources = list(set([
             c["metadata"].get("source_file", "N/A")
             for c in chunks
@@ -238,11 +205,10 @@ Grounded (YES/NO):"""
 if __name__ == "__main__":
     agent = MSMERAGAgent(business_id="BIZ001")
 
+    # Only 2 questions to stay within rate limits
     test_questions = [
         "What is my GST compliance status and am I at risk of penalties?",
         "How can I apply for a MUDRA loan and what documents do I need?",
-        "What is input tax credit and how much ITC can I claim?",
-        "Can I restructure my business loan given current stress?"
     ]
 
     for question in test_questions:
@@ -254,3 +220,7 @@ if __name__ == "__main__":
         print(f"\nSources: {result['sources']}")
         print(f"Grounded: {result['grounded']}")
         print(f"{'='*55}\n")
+
+        # Wait between questions
+        print("⏳ Waiting 15 seconds before next question...")
+        time.sleep(15)
