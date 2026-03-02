@@ -6,6 +6,7 @@ import re
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from rank_bm25 import BM25Okapi
 from src.rag_engine.vector_store import MSMEVectorStore
+from google import genai
 
 class HybridSearchEngine:
     """

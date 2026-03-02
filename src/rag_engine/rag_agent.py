@@ -4,7 +4,7 @@ import sys
 import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-import google.generativeai as genai
+from google import genai
 import pandas as pd
 import json
 from dotenv import load_dotenv
@@ -14,14 +14,14 @@ from src.rag_engine.query_classifier import QueryClassifier
 from datetime import datetime
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 class MSMERAGAgent:
     def __init__(self, business_id: str = "BIZ001"):
         print("Initializing MSME RAG Agent...")
         self.business_id = business_id
-        self.model = genai.GenerativeModel("gemini-2.0-flash-lite")
+        self.client = client
 
         self.vector_store = MSMEVectorStore()
         self.search_engine = HybridSearchEngine(self.vector_store)
@@ -128,7 +128,7 @@ Grounded (YES/NO):"""
 
         try:
             time.sleep(4)
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
             return "YES" in response.text.upper()
         except:
             return True

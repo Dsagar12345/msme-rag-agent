@@ -4,16 +4,16 @@ import sys
 import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-import google.generativeai as genai
+from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 class QueryClassifier:
     def __init__(self):
-        self.model = genai.GenerativeModel("gemini-2.0-flash-lite")
+        self.client = client
 
         self.keyword_map = {
             "tax": [
@@ -79,7 +79,7 @@ REASONING: <one sentence why>"""
 
         try:
             time.sleep(4)
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
             text = response.text.strip()
 
             lines = text.split('\n')
